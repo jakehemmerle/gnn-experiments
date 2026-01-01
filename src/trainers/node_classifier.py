@@ -1,132 +1,77 @@
-"""Node classification training loop."""
+"""Node classification training loop with validation support."""
 
-import time
+from pathlib import Path
+from typing import Any
 
 import torch
 import torch.nn.functional as F
-from torch_geometric.data import Data
-from pathlib import Path
-from omegaconf import OmegaConf, DictConfig
+from omegaconf import DictConfig
 
-from ..utils import save_checkpoint, save_results
+from ..datasets.elliptic import NodeClassificationData
+from .base import BaseTrainer
 
 
-class NodeClassificationTrainer:
-    """Trainer for node classification tasks."""
+class NodeClassificationTrainer(BaseTrainer):
+    """Trainer for node classification tasks with train/val/test splits."""
 
     def __init__(
         self,
         model: torch.nn.Module,
-        data: Data,
-        train_mask: torch.Tensor,
-        test_mask: torch.Tensor,
+        dataset: NodeClassificationData,
         config: DictConfig,
         device: torch.device,
         results_dir: Path
     ):
-        self.model = model
-        self.data = data
-        self.train_mask = train_mask
-        self.test_mask = test_mask
-        self.config = config
-        self.device = device
-        self.results_dir = results_dir
+        # Move dataset to device
+        self.dataset = dataset.to(device)
 
-        self.optimizer = torch.optim.Adam(
-            model.parameters(),
-            lr=config.training.lr,
-            weight_decay=config.training.weight_decay
-        )
+        super().__init__(model, config, device, results_dir)
 
-        self.best_test_acc = 0.0
-        self.final_loss = 0.0
-        self.training_time = 0.0
+        self.best_val_acc = 0.0
 
     def train_epoch(self) -> float:
         """Train for one epoch."""
         self.model.train()
         self.optimizer.zero_grad()
-        out = self.model(self.data.x, self.data.edge_index)
-        loss = F.cross_entropy(out[self.train_mask], self.data.y[self.train_mask])
+
+        out = self.model(self.dataset.data.x, self.dataset.data.edge_index)
+        loss = F.cross_entropy(
+            out[self.dataset.train_mask],
+            self.dataset.data.y[self.dataset.train_mask]
+        )
         loss.backward()
         self.optimizer.step()
+
         return loss.item()
 
     @torch.no_grad()
-    def evaluate(self) -> tuple[float, float]:
-        """Evaluate model on train and test sets."""
+    def evaluate(self) -> dict[str, float]:
+        """Evaluate model on train, val, and test sets."""
         self.model.eval()
-        out = self.model(self.data.x, self.data.edge_index)
+        out = self.model(self.dataset.data.x, self.dataset.data.edge_index)
         pred = out.argmax(dim=1)
 
-        train_correct = (pred[self.train_mask] == self.data.y[self.train_mask]).sum()
-        train_acc = train_correct / self.train_mask.sum()
-
-        test_correct = (pred[self.test_mask] == self.data.y[self.test_mask]).sum()
-        test_acc = test_correct / self.test_mask.sum()
-
-        return train_acc.item(), test_acc.item()
-
-    def train(self, log_interval: int = 20) -> dict:
-        """Run full training loop.
-
-        Args:
-            log_interval: Print metrics every N epochs
-
-        Returns:
-            Dictionary with final results
-        """
-        epochs = self.config.training.epochs
-
-        start_time = time.perf_counter()
-
-        for epoch in range(1, epochs + 1):
-            loss = self.train_epoch()
-            self.final_loss = loss
-
-            if epoch % log_interval == 0 or epoch == 1:
-                train_acc, test_acc = self.evaluate()
-                print(f"Epoch {epoch:03d}, Loss: {loss:.4f}, Train: {train_acc:.4f}, Test: {test_acc:.4f}")
-
-                if test_acc > self.best_test_acc:
-                    self.best_test_acc = test_acc
-
-        self.training_time = time.perf_counter() - start_time
-
-        # Final evaluation
-        train_acc, test_acc = self.evaluate()
+        def accuracy(mask: torch.Tensor) -> float:
+            correct = (pred[mask] == self.dataset.data.y[mask]).sum()
+            return (correct / mask.sum()).item()
 
         return {
+            "train_acc": accuracy(self.dataset.train_mask),
+            "val_acc": accuracy(self.dataset.val_mask),
+            "test_acc": accuracy(self.dataset.test_mask),
+        }
+
+    def get_primary_metric(self, metrics: dict[str, float]) -> float:
+        """Use validation accuracy for model selection."""
+        return metrics["val_acc"]
+
+    def _build_results(self, final_metrics: dict[str, float]) -> dict[str, Any]:
+        """Build the final results dictionary."""
+        return {
             "final_loss": self.final_loss,
-            "train_acc": train_acc,
-            "test_acc": test_acc,
-            "best_test_acc": self.best_test_acc,
+            "train_acc": final_metrics["train_acc"],
+            "val_acc": final_metrics["val_acc"],
+            "test_acc": final_metrics["test_acc"],
+            "best_val_acc": self.best_metric,
             "training_time_seconds": self.training_time
         }
-
-    def save(self, run_id: str, model_name: str, dataset_name: str) -> None:
-        """Save results and checkpoint."""
-        train_acc, test_acc = self.evaluate()
-
-        results = {
-            "run_id": run_id,
-            "model": model_name,
-            "dataset": dataset_name,
-            "device": str(self.device),
-            "hyperparameters": OmegaConf.to_container(self.config),
-            "results": {
-                "final_loss": self.final_loss,
-                "train_acc": train_acc,
-                "test_acc": test_acc,
-                "best_test_acc": self.best_test_acc,
-                "training_time_seconds": self.training_time
-            }
-        }
-
-        save_results(self.results_dir / "metrics.json", results)
-        save_checkpoint(
-            self.results_dir / "checkpoint.pt",
-            self.model, self.optimizer, self.config.training.epochs,
-            {"train_acc": train_acc, "test_acc": test_acc}
-        )
-        OmegaConf.save(self.config, self.results_dir / "config.yaml")

@@ -38,7 +38,8 @@ training:
 
 # Data configuration (node classification only)
 data:
-  train_ratio: 0.8
+  train_ratio: 0.7   # 70% training
+  val_ratio: 0.15    # 15% validation (remaining 15% is test)
 
 # Reproducibility
 seed: 42

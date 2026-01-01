@@ -64,11 +64,11 @@ class TestGenerateRunId:
         """Sequential run IDs should be unique."""
         import time
         id1 = generate_run_id("test", "model")
-        time.sleep(0.01)  # Small delay to ensure different timestamp
+        time.sleep(1.1)  # Delay to ensure different timestamp (second-level granularity)
         id2 = generate_run_id("test", "model")
-        # They should have the same prefix but different timestamps
         assert id1.startswith("test_model_")
         assert id2.startswith("test_model_")
+        assert id1 != id2, "Run IDs should be unique"
 
 
 class TestValidateConfig:

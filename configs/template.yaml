@@ -1,0 +1,40 @@
+# GNN Experiment Configuration Template
+# ======================================
+# Copy this template and customize for your experiment.
+#
+# Usage:
+#   uv run python -m src.run --config configs/my_experiment.yaml
+
+# Dataset configuration
+dataset:
+  name: elliptic  # Options: elliptic (Epic 2 adds: fb15k237)
+
+# Task type (optional - auto-detected from dataset if omitted)
+# task: node_classification  # Options: node_classification, link_prediction
+
+# Model configuration
+model:
+  name: GCN       # Options: GCN, GAT, GraphSAGE (Epic 2 adds: TransE, DistMult, RotatE)
+
+  # Common hyperparameters
+  hidden_channels: 64
+  dropout: 0.5
+
+  # GAT-specific (only used when model.name: GAT)
+  # heads: 8
+
+  # GraphSAGE-specific (only used when model.name: GraphSAGE)
+  # aggr: mean  # Options: mean, max, lstm
+
+# Training configuration
+training:
+  lr: 0.01
+  weight_decay: 5e-4
+  epochs: 200
+
+# Data configuration
+data:
+  train_ratio: 0.8
+
+# Reproducibility
+seed: 42

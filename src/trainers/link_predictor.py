@@ -7,6 +7,7 @@ from torch_geometric.data import Data
 from pathlib import Path
 from omegaconf import OmegaConf, DictConfig
 
+from ..distributed import is_main_process, barrier, maybe_wrap_ddp
 from ..utils import save_checkpoint, save_results
 
 
@@ -21,23 +22,28 @@ class LinkPredictionTrainer:
         test_data: Data,
         config: DictConfig,
         device: torch.device,
-        results_dir: Path
+        results_dir: Path,
+        rank: int = 0,
+        world_size: int = 1,
     ):
-        self.model = model
         self.train_data = train_data
         self.val_data = val_data
         self.test_data = test_data
         self.config = config
         self.device = device
         self.results_dir = results_dir
+        self.world_size = world_size
+
+        # Wrap model in DDP if distributed
+        self.model, self._raw_model = maybe_wrap_ddp(model, rank, world_size)
 
         self.optimizer = torch.optim.Adam(
-            model.parameters(),
+            self.model.parameters(),
             lr=config.training.lr
         )
 
         # Create data loader using model's built-in loader
-        self.loader = model.loader(
+        self.loader = self._raw_model.loader(
             head_index=train_data.edge_index[0],
             rel_type=train_data.edge_type,
             tail_index=train_data.edge_index[1],
@@ -78,9 +84,10 @@ class LinkPredictionTrainer:
         Returns:
             mean_rank, mrr, hits_at_k
         """
-        self.model.eval()
+        self._raw_model.eval()
 
-        mean_rank, mrr, hits_at_k = self.model.test(
+        # Use raw model for evaluation (KGE test method)
+        mean_rank, mrr, hits_at_k = self._raw_model.test(
             head_index=data.edge_index[0].to(self.device),
             rel_type=data.edge_type.to(self.device),
             tail_index=data.edge_index[1].to(self.device),
@@ -109,24 +116,35 @@ class LinkPredictionTrainer:
             self.final_loss = loss
 
             if epoch % log_interval == 0 or epoch == 1:
-                val_rank, val_mrr, val_hits = self.evaluate(self.val_data)
-                print(f"Epoch {epoch:03d}, Loss: {loss:.4f}, "
-                      f"Val MRR: {val_mrr:.4f}, Hits@{self.k}: {val_hits:.4f}")
+                # Synchronize before evaluation
+                barrier()
 
-                if val_mrr > self.best_val_mrr:
-                    self.best_val_mrr = val_mrr
-                    # Save best model
-                    save_checkpoint(
-                        self.results_dir / "best_checkpoint.pt",
-                        self.model, self.optimizer, epoch,
-                        {"val_mrr": val_mrr, "val_hits": val_hits}
-                    )
+                # Only evaluate and log on main process
+                if is_main_process():
+                    val_rank, val_mrr, val_hits = self.evaluate(self.val_data)
+                    print(f"Epoch {epoch:03d}, Loss: {loss:.4f}, "
+                          f"Val MRR: {val_mrr:.4f}, Hits@{self.k}: {val_hits:.4f}")
+
+                    if val_mrr > self.best_val_mrr:
+                        self.best_val_mrr = val_mrr
+                        # Save best model
+                        save_checkpoint(
+                            self.results_dir / "best_checkpoint.pt",
+                            self._raw_model, self.optimizer, epoch,
+                            {"val_mrr": val_mrr, "val_hits": val_hits}
+                        )
+
+                barrier()
 
         self.training_time = time.perf_counter() - start_time
 
-        # Final evaluation on test set
-        print("\nEvaluating on test set...")
-        test_rank, test_mrr, test_hits = self.evaluate(self.test_data)
+        # Final evaluation on test set (main process only)
+        barrier()
+        if is_main_process():
+            print("\nEvaluating on test set...")
+            test_rank, test_mrr, test_hits = self.evaluate(self.test_data)
+        else:
+            test_rank, test_mrr, test_hits = 0.0, 0.0, 0.0
 
         return {
             "final_loss": self.final_loss,
@@ -147,6 +165,7 @@ class LinkPredictionTrainer:
             "model": model_name,
             "dataset": dataset_name,
             "device": str(self.device),
+            "world_size": self.world_size,
             "hyperparameters": OmegaConf.to_container(self.config),
             "results": {
                 "final_loss": self.final_loss,
@@ -162,7 +181,7 @@ class LinkPredictionTrainer:
         save_results(self.results_dir / "metrics.json", results)
         save_checkpoint(
             self.results_dir / "checkpoint.pt",
-            self.model, self.optimizer, self.config.training.epochs,
+            self._raw_model, self.optimizer, self.config.training.epochs,
             {"test_mrr": test_mrr, "test_hits": test_hits}
         )
         OmegaConf.save(self.config, self.results_dir / "config.yaml")

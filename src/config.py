@@ -6,9 +6,19 @@ from omegaconf import OmegaConf
 from pathlib import Path
 
 
-def get_device() -> torch.device:
-    """Get the best available device (CUDA or CPU)."""
-    return torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+def get_device(rank: int | None = None) -> torch.device:
+    """Get the best available device (CUDA or CPU).
+
+    Args:
+        rank: Optional GPU rank for distributed training. If provided,
+              returns a specific CUDA device. If None, auto-detects.
+
+    Returns:
+        torch.device for the appropriate device
+    """
+    if rank is not None:
+        return torch.device(f"cuda:{rank}")
+    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def load_config(config_path: str) -> OmegaConf:

@@ -7,7 +7,32 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  # Docker-based testing (primary)
+  test-docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build test image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: runtime
+          build-args: |
+            TARGET=cpu
+          load: true
+          tags: gnn-experiments:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run tests in Docker
+        run: docker run --rm gnn-experiments:test pytest -v --tb=short
+
+  # Native testing (fallback/comparison)
+  test-native:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

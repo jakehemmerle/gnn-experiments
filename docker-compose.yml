@@ -1,0 +1,33 @@
+services:
+  # GPU service for local training and experiments
+  gnn:
+    build:
+      context: .
+      args:
+        TARGET: gpu
+    image: gnn-experiments:gpu
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    volumes:
+      - ./data:/app/data
+      - ./results:/app/results
+      - ./configs:/app/configs:ro
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    stdin_open: true
+    tty: true
+    command: ["python", "-m", "src.run", "--config", "configs/elliptic_gcn.yaml"]
+
+  # CPU test service (for local testing without GPU)
+  test:
+    build:
+      context: .
+      args:
+        TARGET: cpu
+    image: gnn-experiments:cpu
+    command: ["pytest", "-v", "--tb=short"]

@@ -1,0 +1,13 @@
+model:
+  hidden_channels: 64
+  dropout: 0.5
+
+training:
+  lr: 0.01
+  weight_decay: 5e-4
+  epochs: 200
+
+data:
+  train_ratio: 0.8
+
+seed: 42

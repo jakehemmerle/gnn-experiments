@@ -133,6 +133,7 @@ def main():
 
     print(f"\nResults saved to {results_dir}")
     print(f"Final Test Accuracy: {results['test_acc']:.4f}")
+    print(f"Training Time: {results['training_time_seconds']:.2f}s")
 
 
 if __name__ == "__main__":

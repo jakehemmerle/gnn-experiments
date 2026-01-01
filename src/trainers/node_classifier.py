@@ -1,5 +1,7 @@
 """Node classification training loop."""
 
+import time
+
 import torch
 import torch.nn.functional as F
 from torch_geometric.data import Data
@@ -38,6 +40,7 @@ class NodeClassificationTrainer:
 
         self.best_test_acc = 0.0
         self.final_loss = 0.0
+        self.training_time = 0.0
 
     def train_epoch(self) -> float:
         """Train for one epoch."""
@@ -75,6 +78,8 @@ class NodeClassificationTrainer:
         """
         epochs = self.config.training.epochs
 
+        start_time = time.perf_counter()
+
         for epoch in range(1, epochs + 1):
             loss = self.train_epoch()
             self.final_loss = loss
@@ -86,6 +91,8 @@ class NodeClassificationTrainer:
                 if test_acc > self.best_test_acc:
                     self.best_test_acc = test_acc
 
+        self.training_time = time.perf_counter() - start_time
+
         # Final evaluation
         train_acc, test_acc = self.evaluate()
 
@@ -93,7 +100,8 @@ class NodeClassificationTrainer:
             "final_loss": self.final_loss,
             "train_acc": train_acc,
             "test_acc": test_acc,
-            "best_test_acc": self.best_test_acc
+            "best_test_acc": self.best_test_acc,
+            "training_time_seconds": self.training_time
         }
 
     def save(self, run_id: str, model_name: str, dataset_name: str) -> None:
@@ -110,7 +118,8 @@ class NodeClassificationTrainer:
                 "final_loss": self.final_loss,
                 "train_acc": train_acc,
                 "test_acc": test_acc,
-                "best_test_acc": self.best_test_acc
+                "best_test_acc": self.best_test_acc,
+                "training_time_seconds": self.training_time
             }
         }
 

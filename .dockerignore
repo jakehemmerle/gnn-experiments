@@ -11,7 +11,7 @@ ENV/
 # uv
 .python-version
 
-# Data and results (large files)
+# Data and results (mount these instead)
 data/
 results/
 checkpoints/
@@ -28,3 +28,15 @@ Thumbs.db
 
 # Jupyter
 .ipynb_checkpoints/
+
+# Git
+.git/
+.gitignore
+
+# Docker (prevent recursive context)
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# CI
+.github/

@@ -78,7 +78,7 @@ Create unified interface for PyG's built-in KGE models:
 ```python
 """Knowledge Graph Embedding models."""
 
-from torch_geometric.nn import TransE, DistMult, RotatE
+from torch_geometric.nn.kge import TransE, DistMult, RotatE
 
 def get_kge_model(name: str, num_entities: int, num_relations: int, hidden_channels: int = 50):
     """Factory function for KGE models."""
@@ -198,7 +198,7 @@ Target baselines (FB15k-237):
 
 ## File Structure After Epic 2
 
-```
+```text
 src/
 ├── datasets/
 │   ├── __init__.py      # Updated registry

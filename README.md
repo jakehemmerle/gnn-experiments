@@ -88,7 +88,7 @@ Node classification on the Elliptic Bitcoin dataset to detect illicit transactio
 
 ## Project Structure
 
-```
+```text
 ├── src/
 │   ├── config.py           # Device selection, run ID generation
 │   ├── utils.py            # Seeds, checkpointing

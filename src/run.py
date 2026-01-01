@@ -42,7 +42,7 @@ def run_node_classification(config, device, results_dir, run_id):
     # Build model kwargs from config
     model_kwargs = {
         "in_channels": data.num_node_features,
-        "out_channels": 2,  # Binary classification for Elliptic
+        "out_channels": config.model.get("out_channels", 2),
         "hidden_channels": config.model.hidden_channels,
         "dropout": config.model.dropout,
     }

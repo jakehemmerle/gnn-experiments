@@ -1,47 +1,53 @@
 #!/usr/bin/env python3
 """Config-driven experiment launcher.
 
-Supports node classification (Epic 1) and will support link prediction (Epic 2).
+Unified entry point for all GNN experiments with proper validation,
+logging, and experiment tracking.
 
 Usage:
-    uv run python -m src.run --config configs/my_experiment.yaml
+    uv run python -m src.run --config configs/elliptic_gcn.yaml
+    uv run python -m src.run --config configs/fb15k_transe.yaml
 """
 
 import argparse
 from pathlib import Path
 
-import torch
 from omegaconf import OmegaConf
 
-from .config import get_device, generate_run_id, ensure_dirs
+from .config import (
+    get_device,
+    generate_run_id,
+    load_config,
+    validate_config,
+    merge_with_defaults,
+)
+from .paths import get_results_dir, ensure_dirs
 from .utils import set_seed
 from .models import get_model
 from .datasets import get_dataset, get_task_for_dataset
 from .trainers import NodeClassificationTrainer, LinkPredictionTrainer
+from .logging_config import setup_logging, get_logger
 
 
-def run_node_classification(config, device, results_dir, run_id):
+def run_node_classification(config, device, results_dir, run_id, logger):
     """Run node classification experiment."""
     dataset_name = config.dataset.name
     model_name = config.model.name
 
-    print(f"\nLoading {dataset_name} dataset...")
-    data, train_mask, test_mask = get_dataset(
+    logger.info(f"Loading {dataset_name} dataset...")
+    dataset = get_dataset(
         dataset_name,
-        root=str(Path(__file__).parent.parent / "data" / dataset_name),
-        train_ratio=config.data.train_ratio
+        train_ratio=config.data.train_ratio,
+        val_ratio=config.data.val_ratio
     )
-    data = data.to(device)
-    train_mask = train_mask.to(device)
-    test_mask = test_mask.to(device)
 
-    print(f"Nodes: {data.num_nodes:,}, Edges: {data.num_edges:,}")
-    print(f"Features: {data.num_node_features}")
-    print(f"Train: {train_mask.sum():,}, Test: {test_mask.sum():,}")
+    logger.info(f"Nodes: {dataset.num_nodes:,}, Edges: {dataset.num_edges:,}")
+    logger.info(f"Features: {dataset.num_features}")
+    logger.info(f"Train: {dataset.train_mask.sum():,}, Val: {dataset.val_mask.sum():,}, Test: {dataset.test_mask.sum():,}")
 
     # Build model kwargs from config
     model_kwargs = {
-        "in_channels": data.num_node_features,
+        "in_channels": dataset.num_features,
         "out_channels": config.model.get("out_channels", 2),
         "hidden_channels": config.model.hidden_channels,
         "dropout": config.model.dropout,
@@ -58,34 +64,32 @@ def run_node_classification(config, device, results_dir, run_id):
     # Train
     trainer = NodeClassificationTrainer(
         model=model,
-        data=data,
-        train_mask=train_mask,
-        test_mask=test_mask,
+        dataset=dataset,
         config=config,
         device=device,
         results_dir=results_dir
     )
 
-    print(f"\nTraining {model_name} for {config.training.epochs} epochs...")
-    results = trainer.train(log_interval=20)
+    log_interval = config.training.get("log_interval", 20)
+    logger.info(f"Training {model_name} for {config.training.epochs} epochs...")
+    results = trainer.train(log_interval=log_interval)
     trainer.save(run_id, model_name, dataset_name)
 
     return results
 
 
-def run_link_prediction(config, device, results_dir, run_id):
+def run_link_prediction(config, device, results_dir, run_id, logger):
     """Run link prediction experiment with KGE models."""
     dataset_name = config.dataset.name
     model_name = config.model.name
 
-    print(f"\nLoading {dataset_name} dataset...")
+    logger.info(f"Loading {dataset_name} dataset...")
     train_data, val_data, test_data, num_entities, num_relations = get_dataset(
-        dataset_name,
-        root=str(Path(__file__).parent.parent / "data" / dataset_name)
+        dataset_name
     )
 
-    print(f"Entities: {num_entities:,}, Relations: {num_relations}")
-    print(f"Train: {train_data.num_edges:,}, Val: {val_data.num_edges:,}, Test: {test_data.num_edges:,}")
+    logger.info(f"Entities: {num_entities:,}, Relations: {num_relations}")
+    logger.info(f"Train: {train_data.num_edges:,}, Val: {val_data.num_edges:,}, Test: {test_data.num_edges:,}")
 
     # Build model kwargs from config
     model_kwargs = {
@@ -100,9 +104,9 @@ def run_link_prediction(config, device, results_dir, run_id):
 
     model = get_model(model_name, task="link_prediction", **model_kwargs).to(device)
 
-    print(f"\nModel: {model_name}")
-    print(f"Embedding dim: {config.model.hidden_channels}")
-    print(f"Parameters: {sum(p.numel() for p in model.parameters()):,}")
+    logger.info(f"Model: {model_name}")
+    logger.info(f"Embedding dim: {config.model.hidden_channels}")
+    logger.info(f"Parameters: {sum(p.numel() for p in model.parameters()):,}")
 
     # Train
     trainer = LinkPredictionTrainer(
@@ -116,7 +120,7 @@ def run_link_prediction(config, device, results_dir, run_id):
     )
 
     log_interval = config.training.get("log_every", 50)
-    print(f"\nTraining {model_name} for {config.training.epochs} epochs...")
+    logger.info(f"Training {model_name} for {config.training.epochs} epochs...")
     results = trainer.train(log_interval=log_interval)
     trainer.save(run_id, model_name, dataset_name)
 
@@ -133,12 +137,19 @@ def main():
     )
     args = parser.parse_args()
 
-    # Load config
-    config_path = Path(args.config)
-    if not config_path.exists():
-        raise FileNotFoundError(f"Config file not found: {config_path}")
+    # Load and validate config
+    config = load_config(args.config)
 
-    config = OmegaConf.load(config_path)
+    # Validate config
+    errors = validate_config(config)
+    if errors:
+        print("Configuration errors:")
+        for error in errors:
+            print(f"  - {error}")
+        raise ValueError("Invalid configuration")
+
+    # Merge with defaults
+    config = merge_with_defaults(config)
 
     # Setup
     set_seed(config.seed)
@@ -151,29 +162,33 @@ def main():
 
     # Generate run ID and results directory
     run_id = generate_run_id(config.dataset.name, config.model.name)
-    results_dir = Path(__file__).parent.parent / "results" / run_id
+    results_dir = get_results_dir(run_id)
     ensure_dirs(results_dir)
 
-    print(f"Device: {device}")
-    print(f"Run ID: {run_id}")
-    print(f"Task: {task}")
-    print(f"Config: {config_path}")
+    # Setup logging
+    logger = setup_logging(log_file=results_dir / "experiment.log")
+    logger.info(f"Device: {device}")
+    logger.info(f"Run ID: {run_id}")
+    logger.info(f"Task: {task}")
+    logger.info(f"Config: {args.config}")
 
     # Dispatch to appropriate trainer
     if task == "node_classification":
-        results = run_node_classification(config, device, results_dir, run_id)
+        results = run_node_classification(config, device, results_dir, run_id, logger)
     elif task == "link_prediction":
-        results = run_link_prediction(config, device, results_dir, run_id)
+        results = run_link_prediction(config, device, results_dir, run_id, logger)
     else:
         raise ValueError(f"Unknown task: {task}")
 
-    print(f"\nResults saved to {results_dir}")
+    logger.info(f"Results saved to {results_dir}")
     if task == "node_classification":
-        print(f"Final Test Accuracy: {results['test_acc']:.4f}")
+        logger.info(f"Final Test Accuracy: {results['test_acc']:.4f}")
+        logger.info(f"Best Val Accuracy: {results['best_val_acc']:.4f}")
     elif task == "link_prediction":
-        print(f"Test MRR: {results['test_mrr']:.4f}")
-        print(f"Test Hits@{results['k']}: {results['test_hits_at_k']:.4f}")
-    print(f"Training Time: {results['training_time_seconds']:.2f}s")
+        logger.info(f"Test MRR: {results['test_mrr']:.4f}")
+        k = results['k']
+        logger.info(f"Test Hits@{k}: {results[f'test_hits@{k}']:.4f}")
+    logger.info(f"Training Time: {results['training_time_seconds']:.2f}s")
 
 
 if __name__ == "__main__":

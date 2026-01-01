@@ -6,7 +6,7 @@ and link prediction tasks.
 
 from typing import Callable, Any
 
-from .elliptic import load_elliptic
+from .elliptic import load_elliptic, NodeClassificationData
 from .fb15k import load_fb15k237, get_fb15k237_info
 
 # Dataset loaders: name -> (loader_function, task_type)
@@ -57,5 +57,6 @@ __all__ = [
     "get_fb15k237_info",
     "get_dataset",
     "get_task_for_dataset",
+    "NodeClassificationData",
     "DATASETS",
 ]

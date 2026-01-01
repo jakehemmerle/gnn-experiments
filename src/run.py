@@ -17,7 +17,7 @@ from .config import get_device, generate_run_id, ensure_dirs
 from .utils import set_seed
 from .models import get_model
 from .datasets import get_dataset, get_task_for_dataset
-from .trainers import NodeClassificationTrainer
+from .trainers import NodeClassificationTrainer, LinkPredictionTrainer
 
 
 def run_node_classification(config, device, results_dir, run_id):
@@ -74,17 +74,53 @@ def run_node_classification(config, device, results_dir, run_id):
 
 
 def run_link_prediction(config, device, results_dir, run_id):
-    """Run link prediction experiment.
+    """Run link prediction experiment with KGE models."""
+    dataset_name = config.dataset.name
+    model_name = config.model.name
 
-    Epic 2 will implement this function with:
-    - FB15k-237 dataset loading
-    - KGE model training (TransE, DistMult, RotatE)
-    - MRR/Hits@k evaluation
-    """
-    raise NotImplementedError(
-        "Link prediction not yet implemented. "
-        "Epic 2 will add support for FB15k-237 with TransE/DistMult/RotatE."
+    print(f"\nLoading {dataset_name} dataset...")
+    train_data, val_data, test_data, num_entities, num_relations = get_dataset(
+        dataset_name,
+        root=str(Path(__file__).parent.parent / "data" / dataset_name)
     )
+
+    print(f"Entities: {num_entities:,}, Relations: {num_relations}")
+    print(f"Train: {train_data.num_edges:,}, Val: {val_data.num_edges:,}, Test: {test_data.num_edges:,}")
+
+    # Build model kwargs from config
+    model_kwargs = {
+        "num_nodes": num_entities,
+        "num_relations": num_relations,
+        "hidden_channels": config.model.hidden_channels,
+    }
+
+    # Add model-specific kwargs
+    if hasattr(config.model, "margin"):
+        model_kwargs["margin"] = config.model.margin
+
+    model = get_model(model_name, task="link_prediction", **model_kwargs).to(device)
+
+    print(f"\nModel: {model_name}")
+    print(f"Embedding dim: {config.model.hidden_channels}")
+    print(f"Parameters: {sum(p.numel() for p in model.parameters()):,}")
+
+    # Train
+    trainer = LinkPredictionTrainer(
+        model=model,
+        train_data=train_data,
+        val_data=val_data,
+        test_data=test_data,
+        config=config,
+        device=device,
+        results_dir=results_dir
+    )
+
+    log_interval = config.training.get("log_every", 50)
+    print(f"\nTraining {model_name} for {config.training.epochs} epochs...")
+    results = trainer.train(log_interval=log_interval)
+    trainer.save(run_id, model_name, dataset_name)
+
+    return results
 
 
 def main():
@@ -132,7 +168,11 @@ def main():
         raise ValueError(f"Unknown task: {task}")
 
     print(f"\nResults saved to {results_dir}")
-    print(f"Final Test Accuracy: {results['test_acc']:.4f}")
+    if task == "node_classification":
+        print(f"Final Test Accuracy: {results['test_acc']:.4f}")
+    elif task == "link_prediction":
+        print(f"Test MRR: {results['test_mrr']:.4f}")
+        print(f"Test Hits@{results['k']}: {results['test_hits_at_k']:.4f}")
     print(f"Training Time: {results['training_time_seconds']:.2f}s")
 
 

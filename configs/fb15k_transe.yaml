@@ -1,0 +1,19 @@
+dataset:
+  name: fb15k237
+
+model:
+  name: TransE
+  hidden_channels: 50
+  margin: 1.0  # TransE margin for ranking loss
+
+training:
+  lr: 0.01
+  epochs: 500
+  batch_size: 2048
+  log_every: 50
+
+evaluation:
+  batch_size: 20000
+  k: 10  # Hits@k
+
+seed: 42

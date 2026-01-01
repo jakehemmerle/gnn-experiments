@@ -5,16 +5,20 @@
 # Usage:
 #   uv run python -m src.run --config configs/my_experiment.yaml
 
+# ============================================
+# NODE CLASSIFICATION EXAMPLE (Fraud Detection)
+# ============================================
+
 # Dataset configuration
 dataset:
-  name: elliptic  # Options: elliptic (Epic 2 adds: fb15k237)
+  name: elliptic  # Options: elliptic, fb15k237
 
 # Task type (optional - auto-detected from dataset if omitted)
 # task: node_classification  # Options: node_classification, link_prediction
 
 # Model configuration
 model:
-  name: GCN       # Options: GCN, GAT, GraphSAGE (Epic 2 adds: TransE, DistMult, RotatE)
+  name: GCN       # Options: GCN, GAT, GraphSAGE, TransE, DistMult, RotatE
 
   # Common hyperparameters
   hidden_channels: 64
@@ -32,9 +36,34 @@ training:
   weight_decay: 5e-4
   epochs: 200
 
-# Data configuration
+# Data configuration (node classification only)
 data:
   train_ratio: 0.8
 
 # Reproducibility
 seed: 42
+
+# ============================================
+# LINK PREDICTION EXAMPLE (Knowledge Graphs)
+# ============================================
+# Uncomment below and comment out the node classification section above
+#
+# dataset:
+#   name: fb15k237
+#
+# model:
+#   name: TransE    # Options: TransE, DistMult, RotatE
+#   hidden_channels: 50
+#   margin: 1.0     # TransE/DistMult margin (RotatE uses 9.0)
+#
+# training:
+#   lr: 0.01
+#   epochs: 500
+#   batch_size: 2048
+#   log_every: 50
+#
+# evaluation:
+#   batch_size: 20000
+#   k: 10           # Compute Hits@k
+#
+# seed: 42

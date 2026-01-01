@@ -1,18 +1,18 @@
 """Dataset registry for GNN experiments.
 
-Provides a centralized registry for datasets. Epic 2 will extend this
-with FB15k-237 for knowledge graph link prediction.
+Provides a centralized registry for datasets including node classification
+and link prediction tasks.
 """
 
 from typing import Callable, Any
 
 from .elliptic import load_elliptic
+from .fb15k import load_fb15k237, get_fb15k237_info
 
 # Dataset loaders: name -> (loader_function, task_type)
 DATASETS: dict[str, tuple[Callable, str]] = {
     "elliptic": (load_elliptic, "node_classification"),
-    # Epic 2 will add:
-    # "fb15k237": (load_fb15k237, "link_prediction"),
+    "fb15k237": (load_fb15k237, "link_prediction"),
 }
 
 
@@ -53,6 +53,8 @@ def get_task_for_dataset(name: str) -> str:
 
 __all__ = [
     "load_elliptic",
+    "load_fb15k237",
+    "get_fb15k237_info",
     "get_dataset",
     "get_task_for_dataset",
     "DATASETS",

@@ -1,7 +1,7 @@
 """Model registry for GNN experiments.
 
 Provides a centralized registry for node classification and knowledge graph
-embedding models. Epic 2 will extend this with KGE models (TransE, DistMult, RotatE).
+embedding models.
 """
 
 from typing import Callable
@@ -10,6 +10,7 @@ import torch.nn as nn
 from .gcn import GCN
 from .gat import GAT
 from .graphsage import GraphSAGE
+from .kge import get_kge_model, MODEL_INFO
 
 # Node classification models
 NODE_CLASSIFICATION_MODELS: dict[str, type[nn.Module]] = {
@@ -18,8 +19,12 @@ NODE_CLASSIFICATION_MODELS: dict[str, type[nn.Module]] = {
     "GraphSAGE": GraphSAGE,
 }
 
-# Link prediction models (Epic 2 will populate this)
-LINK_PREDICTION_MODELS: dict[str, Callable] = {}
+# Link prediction models (KGE models)
+LINK_PREDICTION_MODELS: dict[str, Callable] = {
+    "TransE": get_kge_model,
+    "DistMult": get_kge_model,
+    "RotatE": get_kge_model,
+}
 
 
 def get_model(name: str, task: str = "node_classification", **kwargs) -> nn.Module:
@@ -46,7 +51,8 @@ def get_model(name: str, task: str = "node_classification", **kwargs) -> nn.Modu
         if name not in LINK_PREDICTION_MODELS:
             available = list(LINK_PREDICTION_MODELS.keys())
             raise ValueError(f"Unknown link prediction model: {name}. Available: {available}")
-        return LINK_PREDICTION_MODELS[name](**kwargs)
+        # KGE models use get_kge_model factory which takes model_name
+        return LINK_PREDICTION_MODELS[name](model_name=name, **kwargs)
 
     else:
         raise ValueError(f"Unknown task type: {task}. Use 'node_classification' or 'link_prediction'")
@@ -56,6 +62,8 @@ __all__ = [
     "GCN",
     "GAT",
     "GraphSAGE",
+    "get_kge_model",
+    "MODEL_INFO",
     "get_model",
     "NODE_CLASSIFICATION_MODELS",
     "LINK_PREDICTION_MODELS",

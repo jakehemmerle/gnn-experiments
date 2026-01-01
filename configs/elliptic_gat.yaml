@@ -2,12 +2,13 @@ dataset:
   name: elliptic
 
 model:
-  name: GCN
+  name: GAT
   hidden_channels: 64
-  dropout: 0.5
+  heads: 8
+  dropout: 0.6
 
 training:
-  lr: 0.01
+  lr: 0.005
   weight_decay: 5e-4
   epochs: 200
 

@@ -2,9 +2,10 @@ dataset:
   name: elliptic
 
 model:
-  name: GCN
+  name: GraphSAGE
   hidden_channels: 64
   dropout: 0.5
+  aggr: mean
 
 training:
   lr: 0.01
